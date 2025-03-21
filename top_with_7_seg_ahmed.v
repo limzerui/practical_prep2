@@ -4,8 +4,9 @@ module top(
     input btnL,
     input btnD,
     input btnR,
+    input btnC,
+    input btnU,
     output reg [3:0] an,
-    output reg dp,
     output reg [7:0] seg,
     output reg [14:0] led,
     output reg maxled
@@ -21,6 +22,10 @@ module top(
                 AN_3 = 4'b1011,
                 AN_4 = 4'b0111,
                 AN_5 = 4'b1011;
+                
+    wire[7:0] seg_subtask;
+    wire[3:0] an_subtask;
+    seven_seg_controller ssc(clk, seg_subtask, an_subtask);           
     
     wire clockspeed;
     slw_clk dut(clk, clockspeed);
@@ -35,13 +40,12 @@ module top(
     ld2clock ld2(clk, ld2speed);
 
     reg [4:0] led_count;
-    reg trigger;
-    reg [4:0] an_state;
+    reg [3:0] taskbflag = 4'b0;
 
     initial begin
         led_count = 0;
-        trigger = 0;
-        an_state = 0;
+        led = 15'b0;
+        maxled = 1'b0;
     end
 
     always @(posedge clockspeed)begin
@@ -103,6 +107,7 @@ module top(
             15: begin
                 if (sw[2:0] == 3'b000) begin
                     led <= 15'b111111111111111;
+                    taskbflag[3] <= 1'b1;
                 end
                 else if (sw[0] == 1'b1) begin
                     led[14:1] <= 14'b11111111111111;
@@ -118,59 +123,47 @@ module top(
                     led[2] <= ld2speed;
                     led[1:0] <= 2'b11;
                 end
-                trigger <= 1;
-                an_state <= 5'b00001;
+                
             end
         endcase
     end
 
-    always @(*){
-        if(trigger == 1) begin
-            case(an_state)
-                5'b00001: begin
-                    an <= AN_1;
-                    seg <= SEG_L;
-                    if(btnL == 1) begin
-                        an_state <= 5'b00010;
+    always @(*)begin
+        if(taskbflag == 4'b0000) begin
+            an[3:0] <= 4'b1111;
+            seg[7:0] <= 7'b1111111;
+        end
+        else if (taskbflag == 4'b1000) begin
+            //an[3:0] <= 4'b1110;
+            an <= an_subtask;
+            seg <= seg_subtask; 
+            //seg[6:0] <= 7'b0100001;
+            if (btnD == 1) begin
+                taskbflag[2] <= 1; 
+                end
+        end
+        else if (taskbflag == 4'b1100) begin
+                    an[3:0] <= AN_1;
+                    seg[6:0] <= SEG_L;
+                    if (btnL == 1) begin
+                        taskbflag[1] <= 1; 
+                        end
                     end
+        else if (taskbflag == 4'b1110) begin
+            an[3:0] <= AN_2;
+            seg[6:0] <= SEG_R;
+            if (btnR == 1) begin
+                taskbflag[0] <= 1; 
                 end
-                5'b00010: begin
-                    an <= AN_2;
-                    seg <= SEG_C;
-                    if(btnC == 1) an_state <= 5'b00011;
-                end
-                5'b00011: begin
-                    an <= AN_3;
-                    seg <= SEG_R;
-                    if(btnR == 1) an_state <= 5'b00100;
-                end
-                5'b00100: begin
-                    an <= AN_4;
-                    seg <= SEG_C;
-                    if(btnC) an_state <= 5'b00101;
-                end
-                5'b00101: begin
-                    an <= AN_1;
-                    seg <= SEG_U;
-                    if(btnU) an_state <= 5'b00110;
-                end
-                5'b00110: begin
-                    an <= AN_2;
-                    seg <= SEG_D;
-                    if(btnD) an_state <= 5'b00111;
-                end
-                5'b00111: begin
-                    an <= AN_3;
-                    seg <= SEG_C;
-                    maxled <= 1;
-                end
-            endcase
-        end
-        else begin
-            an <= 4'b1111;
-            seg <= 8'b11111111;
-        end
-    }
+            end
+        else if (taskbflag == 4'b1111) begin
+            an[3:0] <= AN_3;
+            seg[6:0] <= SEG_U;
+            maxled <= 1'b1; 
+            end
+        
+        
+    end
 endmodule
 
 // 5Hz clock
@@ -270,3 +263,69 @@ module ld2clock(
      end
        
 endmodule
+
+module clk_divider(
+    input CLOCK,
+    output reg SLOW_CLOCK3
+    );
+
+    reg [18:0] COUNT3;
+
+    initial begin
+        SLOW_CLOCK3 = 0;
+        COUNT3 = 0;
+    end
+
+    always @ (posedge CLOCK) begin
+        if (COUNT3 == 149999 ) begin
+            SLOW_CLOCK3 <= ~SLOW_CLOCK3;
+            COUNT3 <= 0;
+            end
+        else begin
+            COUNT3 <= COUNT3 + 1;
+            end
+     end
+       
+endmodule
+
+module seven_seg_controller(
+    input clk,          
+    output reg [7:0] seg,
+    output reg [3:0] an  
+);
+  wire animation_clk;
+  clk_divider cd(
+        clk,
+        animation_clk);
+        
+  reg [1:0] digit;
+  always @(posedge animation_clk) begin
+    digit <= digit + 1;
+  end
+  
+  always @(*) begin
+    case(digit)
+      2'b00: begin
+        an  = 4'b1110;  
+        seg = 8'b11111001;
+      end
+      2'b01: begin
+        an  = 4'b1101;  
+        seg = 8'b11111001;
+      end
+      2'b10: begin
+        an  = 4'b1011;
+        seg = 8'b00110000;
+      end
+      2'b11: begin
+        an  = 4'b0111;
+        seg = 8'b10010010;
+      end
+      default: begin
+        an  = 4'b1111;
+        seg = 8'b1111111;
+      end
+    endcase
+  end
+endmodule
+
